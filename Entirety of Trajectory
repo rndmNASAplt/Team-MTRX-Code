@@ -1,0 +1,104 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+# Co
+mu = 1.32712440018e11  # Gravitational parameter of the Sun, km^3/s^2
+AU = 1.495978707e8     # Astronomical unit in km
+
+#  radii
+r1 = 1.0 * AU   # Earth's orbit radius
+r2 = 1.524 * AU # Mars' orbit radius
+
+# Hohmann trans parameters
+a = (r1 + r2) / 2             # Semi-major axis
+e = (r2 - r1) / (r2 + r1)     # Eccentricity
+n = np.sqrt(mu / a**3)        # Mean motion
+
+# w
+omega1 = np.sqrt(mu / r1**3)
+omega2 = np.sqrt(mu / r2**3)
+
+# ToF
+t_transfer = np.pi * np.sqrt(a**3 / mu)  # seconds
+
+# Initial phase angle
+theta2_0 = np.pi - omega2 * t_transfer
+
+# Sim peram
+frames = 200
+t_span = np.linspace(0, t_transfer, frames)
+
+# figure
+fig, ax = plt.subplots(figsize=(8,8))
+ax.set_aspect('equal')
+
+# add sun for scale and realism 
+ax.scatter(0, 0, s=200, c='yellow', edgecolors='orange', label='Sun', zorder=5)
+
+# Plot
+theta_full = np.linspace(0, 2*np.pi, 500)
+ax.plot(r1*np.cos(theta_full), r1*np.sin(theta_full), 'b', label='Earth Orbit')
+ax.plot(r2*np.cos(theta_full), r2*np.sin(theta_full), 'r', label='Mars Orbit')
+
+# Transfer 
+theta_el = np.linspace(0, np.pi, 200)
+r_el = a*(1 - e**2) / (1 + e*np.cos(theta_el))
+ax.plot(r_el*np.cos(theta_el), r_el*np.sin(theta_el), 'g--', label='Transfer Ellipse')
+
+# Marker
+earth_marker, = ax.plot([], [], 'bo', label='Earth', zorder=6)
+mars_marker,  = ax.plot([], [], 'ro', label='Mars', zorder=6)
+sc_marker,    = ax.plot([], [], 'k.', markersize=8, label='Spacecraft', zorder=7)
+
+# Axis limits and ticks (need to populate)
+lim = r2 * 1.2
+ax.set_xlim(-lim, lim)
+ax.set_ylim(-lim, lim)
+
+# Populate (done)
+ticks = np.linspace(-lim, lim, 13)
+ax.set_xticks(ticks)
+ax.set_yticks(ticks)
+ax.grid(True, linestyle='--', linewidth=0.5)
+
+ax.set_xlabel('x (km)')
+ax.set_ylabel('y (km)')
+ax.set_title('Hohmann Transfer Simulation for Canada man')
+ax.legend(loc='upper right')
+
+def kepler_E(M, e, tol=1e-8):
+    E = M
+    for _ in range(50):
+        f = E - e*np.sin(E) - M
+        fp = 1 - e*np.cos(E)
+        E_next = E - f/fp
+        if abs(E_next - E) < tol:
+            return E_next
+        E = E_next
+    return E
+
+def update(frame):
+    t = t_span[frame]
+    # Earth position
+    theta1 = omega1 * t
+    x1, y1 = r1*np.cos(theta1), r1*np.sin(theta1)
+    # Mars position
+    theta2 = theta2_0 + omega2 * t
+    x2, y2 = r2*np.cos(theta2), r2*np.sin(theta2)
+    # Spacecraft on transfer ellipse
+    M = n * t
+    E = kepler_E(M, e)
+    f = 2 * np.arctan2(np.sqrt(1+e)*np.sin(E/2), np.sqrt(1-e)*np.cos(E/2))
+    r = a * (1 - e*np.cos(E))
+    xs, ys = r * np.cos(f), r * np.sin(f)
+    
+    # Update markers with sequences
+    earth_marker.set_data([x1], [y1])
+    mars_marker.set_data([x2], [y2])
+    sc_marker.set_data([xs], [ys])
+    return earth_marker, mars_marker, sc_marker
+
+# ani
+ani = FuncAnimation(fig, update, frames=frames, interval=50, blit=True)
+plt.show()
