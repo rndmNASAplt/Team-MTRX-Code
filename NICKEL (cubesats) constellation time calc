@@ -1,0 +1,193 @@
+# Import necessary libraries
+import os
+from skyfield.api import load, EarthSatellite
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from datetime import datetime
+import matplotlib.image as mpimg
+
+# Clear console before running the script
+def clear_console():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+clear_console()
+
+# Ask user if they want to display latitude and longitude values
+display_lat_long = input("Do you want to display latitude and longitude values during animation? (yes/no): ").strip().lower() == 'yes'
+
+# Constants for Mars
+MARS_RADIUS = 3389.5  # Radius of Mars in km
+MARS_GRAVITATIONAL_PARAMETER = 4.282837e13  # m^3/s^2, gravitational parameter for Mars
+
+# Function to calculate the time to cover the entire surface of Mars
+def time_to_cover_surface(swath_width_km, satellite_height_km):
+    # Convert satellite height to meters
+    satellite_height_m = satellite_height_km * 1000
+    mars_radius_m = MARS_RADIUS * 1000
+    
+    # Calculate orbital speed (circular orbit) in m/s
+    orbital_speed = np.sqrt(MARS_GRAVITATIONAL_PARAMETER / (mars_radius_m + satellite_height_m))
+    
+    # Calculate the circumference of Mars at the altitude of the satellite in km
+    orbit_circumference_km = 2 * np.pi * (MARS_RADIUS + satellite_height_km)
+    
+    # Calculate the number of orbits required to cover the entire surface
+    # Assuming the satellite moves swath_width_km laterally per orbit due to Mars' rotation
+    num_orbits = MARS_RADIUS * 2 * np.pi / swath_width_km
+    
+    # Calculate the time for one orbit in seconds
+    time_per_orbit = orbit_circumference_km / (orbital_speed / 1000)  # Convert speed to km/s
+    
+    # Calculate the total time to cover the entire surface in hours
+    total_time_hours = (num_orbits * time_per_orbit) / 3600
+    
+    return total_time_hours
+
+# Get user inputs for swath width and satellite height
+swath_width = float(input("Enter the swath width in km: "))
+satellite_height = float(input("Enter the satellite height in km: "))
+
+time_hours = time_to_cover_surface(swath_width, satellite_height)
+print(f"Time to cover the entire surface of Mars: {time_hours:.2f} hours")
+
+# Your existing code here for plotting and animation...
+
+# Input TLE data for the ISS (replace with the latest TLE data)
+satellite_name = 'ISS (ZARYA)'
+tle_line1 = '1 25544U 98067A   23276.50694444  .00007440  00000+0  14684-3 0  9993'
+tle_line2 = '2 25544  51.6446 307.1987 0007634  80.5340 279.6446 15.50063870372432'
+
+# Create satellite object using the TLE data
+ts = load.timescale()
+satellite = EarthSatellite(tle_line1, tle_line2, satellite_name, ts)
+
+# Get the current UTC date
+now = datetime.utcnow()
+year = now.year
+month = now.month
+day = now.day
+
+# Compute satellite positions over time (every 10 minutes for 24 hours)
+t = ts.utc(year, month, day, 0, range(0, 1440, 10))
+
+# Get the geocentric positions (x, y, z in kilometers)
+geocentric = satellite.at(t)
+positions = geocentric.position.km  # Positions in km
+x, y, z = positions  # Unpack positions into x, y, z arrays
+
+# Set up the 3D plot for orbit animation
+fig = plt.figure(figsize=(12, 6))
+
+# Create a subplot grid with 1 row and 2 columns
+ax1 = fig.add_subplot(121, projection='3d')  # 3D subplot for orbit
+ax2 = fig.add_subplot(122, projection=ccrs.PlateCarree())  # 2D subplot for Mars map
+
+# --- 3D Orbit Plot ---
+
+# Plot Earth as a wireframe sphere
+earth_radius = 6371  # Earth's radius in km
+u, v = np.mgrid[0:2*np.pi:100j, 0:np.pi:100j]  # Create meshgrid for sphere
+xe = earth_radius * np.cos(u) * np.sin(v)  # X coordinates
+ye = earth_radius * np.sin(u) * np.sin(v)  # Y coordinates
+ze = earth_radius * np.cos(v)              # Z coordinates
+ax1.plot_wireframe(xe, ye, ze, color='blue', linewidth=0.5, alpha=0.3)  # Plot Earth
+
+# Initialize the satellite's orbit path and current position
+satellite_line, = ax1.plot([], [], [], 'r-', label='Orbit Path')  # Orbit path line
+satellite_dot, = ax1.plot([], [], [], 'ro', label='Satellite Position')  # Current position dot
+
+def init_3d():
+    """Initialize the 3D animation."""
+    satellite_line.set_data([], [])
+    satellite_line.set_3d_properties([])
+    satellite_dot.set_data([], [])
+    satellite_dot.set_3d_properties([])
+    return satellite_line, satellite_dot
+
+def update_3d(num):
+    """Update function for 3D animation."""
+    satellite_line.set_data(x[:num], y[:num])  # Update orbit path
+    satellite_line.set_3d_properties(z[:num])
+    satellite_dot.set_data([x[num]], [y[num]])  # Update current position
+    satellite_dot.set_3d_properties([z[num]])
+    return satellite_line, satellite_dot
+
+# Configure the 3D plot aesthetics
+max_val = earth_radius + 2000  # Set plot limits
+ax1.set_xlim(-max_val, max_val)
+ax1.set_ylim(-max_val, max_val)
+ax1.set_zlim(-max_val, max_val)
+ax1.set_xlabel('X (km)')  # Axis labels
+ax1.set_ylabel('Y (km)')
+ax1.set_zlabel('Z (km)')
+ax1.set_title(f'Satellite Orbit Animation: {satellite_name}')  # Title with satellite name
+ax1.legend()
+
+# --- 2D Mars Map Plot using Cartopy ---
+
+# Load the Mars map image
+mars_map = mpimg.imread('C:/Users/Proto/Desktop/New_folder/image.jpg')
+
+# Set up the map projection using Cartopy
+ax2.imshow(mars_map, extent=[-180, 180, -90, 90], transform=ccrs.PlateCarree(), aspect='auto')
+ax2.set_global()
+ax2.gridlines()
+
+# Initialize the ground track path and current position
+ground_line, = ax2.plot([], [], 'r-', label='Ground Track', transform=ccrs.Geodetic(), linewidth=2)
+ground_dot, = ax2.plot([], [], 'ro', label='Satellite Position', transform=ccrs.Geodetic())
+
+def init_2d():
+    """Initialize the 2D animation."""
+    ground_line.set_data([], [])
+    ground_dot.set_data([], [])
+    return ground_line, ground_dot
+
+def update_2d(num):
+    """Update function for 2D animation."""
+    # Calculate the subpoint for each time step
+    subpoint = geocentric[num].subpoint()
+    latitude = subpoint.latitude.degrees  # Latitude in degrees
+    longitude = subpoint.longitude.degrees  # Longitude in degrees
+
+    # Display latitude and longitude if the user chose to
+    if display_lat_long:
+        print(f"Frame {num}: Latitude = {latitude}, Longitude = {longitude}")
+
+    # Update the ground track up to the current point and the current position
+    if num > 0:
+        latitudes = [geocentric[i].subpoint().latitude.degrees for i in range(num)]
+        longitudes = [geocentric[i].subpoint().longitude.degrees for i in range(num)]
+        ground_line.set_data(longitudes, latitudes)  # Update ground track
+
+    ground_dot.set_data([longitude], [latitude])  # Update current position dot
+    return ground_line, ground_dot
+
+
+# Configure the 2D plot aesthetics
+ax2.set_title(f'Mars Map with Ground Track: {satellite_name}')  # Title with satellite name
+ax2.legend(loc='lower left')
+
+# --- Combine Animations ---
+
+def init():
+    """Initialize both animations."""
+    init_3d()
+    init_2d()
+    return satellite_line, satellite_dot, ground_line, ground_dot
+
+def update(num):
+    """Update function for both animations."""
+    update_3d(num)
+    update_2d(num)
+    return satellite_line, satellite_dot, ground_line, ground_dot
+
+# Create the animation
+ani = FuncAnimation(fig, update, frames=len(t), init_func=init, interval=100, blit=True)
+
+# Display the animation
+plt.tight_layout()
+plt.show()
